@@ -27,7 +27,7 @@ BlueSky has changed their image/video size limits over time, so keep an eye on t
 
 - Twitter - Twitter has given me plenty of trouble over time.  Be ready for changes in this over time.
 I will say that it is up to YOU to keep track of your daily posts.  While twitter indicates there's a limit, they no longer provide you with details in api calls.  
-Through the post api's, twitter no longer indiciates what your limit is, nor how many you have remaining.  In testing, no infomration changse in the information back to the user whether it is your first post, approaching the limit, or gone over.  The first inidicate you'll receive is a 429 error.
+Through the post api's, twitter no longer indicates what your limit is, nor how many you have remaining.  In testing, no information changes in the information back to the user whether it is your first post, approaching the limit, or gone over.  The first indication you'll receive is a 429 error.
 ```
 {
   "client_id": "",
@@ -118,7 +118,7 @@ import Post_BlueSky                                                  # Allow to 
             self.Logger.Log( f"\n\t**Encountered an error in Twitter()**\n\t{str(e)}", "Error" )
 ```
 
-Additionally, you may update the main start of Post_Twitter.py.  I was usingt his as testing for a post with just text, a post with an image, and a post with a movie.
+Additionally, you may update the main start of Post_Twitter.py.  I was using this as testing for a post with just text, a post with an image, and a post with a movie.
 
 ```
     Posting = Post_Content()
