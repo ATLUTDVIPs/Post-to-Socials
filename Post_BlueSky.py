@@ -1,36 +1,38 @@
-# https://github.com/bluesky-social/cookbook/blob/main/python-bsky-post/create_bsky_post.py
 
+
+# Obtained originally from, then modified
+# https://github.com/bluesky-social/cookbook/blob/main/python-bsky-post/create_bsky_post.py
 #!/usr/bin/env python3
 
-"""
-Script demonstrating how to create posts using the Bluesky API, covering most of the features and embed options.
 
-To run this Python script, you need the 'requests' and 'bs4' (BeautifulSoup) packages installed.
-"""
 
 #---------------------------------------------------------------------------------------------------------------#
 # Load Modules
-#
+# py -m pip install --upgrade package_name
 #---------------------------------------------------------------------------------------------------------------#
 import sys
 import os                                                            # used to interact with the file system
 import json                                                          # Interacts with json data
 import argparse                                                      # used for easy parsing script input parametesr
 
-import re
-from typing import Dict, List
-from datetime import datetime, timezone
+import re                                                            # Using Regex
+from typing import Dict, List                                        # Defining data types
+from datetime import datetime, timezone                              # work with timestamps
 
-import requests
-from bs4 import BeautifulSoup
+import requests                                                      # web requests
+from bs4 import BeautifulSoup                                        # parse html pages
+
+import Social_Post_Logger                                            # Keeping track of rate limits
 
 
-
+#---------------------------------------------------------------------------------------------------------------#
+# Class
+#---------------------------------------------------------------------------------------------------------------#
 class Post_Content( ):
     CREDENTIALS_FILE = r'D:\Data\git\Credentials_BlueSky_ATLUTD.json'
     Handle = ""
     Password = ""
-
+    Rate_Limit = Social_Post_Logger.Social_Post_Logger()
 
     #---------------------------------------------------------------------------------------------------------------#
     # Class initialization
@@ -371,59 +373,64 @@ class Post_Content( ):
     #---------------------------------------------------------------------------------------------------------------#
     def create_post( self, args ):
         try: 
-            #session = self.bsky_login_session(args.pds_url, args.handle, args.password)
-            session = self.bsky_login_session(args.pds_url, self.Handle, self.Password)
+            if ( self.Rate_Limit.Can_Post_To_Social_Site( "Bluesky" ) ):
 
-            # trailing "Z" is preferred over "+00:00"
-            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                #session = self.bsky_login_session(args.pds_url, args.handle, args.password)
+                session = self.bsky_login_session(args.pds_url, self.Handle, self.Password)
 
-            # these are the required fields which every post must include
-            post = {
-                "$type": "app.bsky.feed.post",
-                "text": args.text,
-                "createdAt": now,
-            }
+                # trailing "Z" is preferred over "+00:00"
+                now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-            # indicate included languages (optional)
-            if args.lang:
-                post["langs"] = args.lang
+                # these are the required fields which every post must include
+                post = {
+                    "$type": "app.bsky.feed.post",
+                    "text": args.text,
+                    "createdAt": now,
+                }
 
-            # parse out mentions and URLs as "facets"
-            if len(args.text) > 0:
-                facets = self.parse_facets(args.pds_url, post["text"])
-                if facets:
-                    post["facets"] = facets
+                # indicate included languages (optional)
+                if args.lang:
+                    post["langs"] = args.lang
 
-            # if this is a reply, get references to the parent and root
-            if args.reply_to:
-                post["reply"] = self.get_reply_refs(args.pds_url, args.reply_to)
+                # parse out mentions and URLs as "facets"
+                if len(args.text) > 0:
+                    facets = self.parse_facets(args.pds_url, post["text"])
+                    if facets:
+                        post["facets"] = facets
 
-            if args.image:
-                post["embed"] = self.upload_images(
-                    args.pds_url, session["accessJwt"], args.image, args.alt_text
+                # if this is a reply, get references to the parent and root
+                if args.reply_to:
+                    post["reply"] = self.get_reply_refs(args.pds_url, args.reply_to)
+
+                if args.image:
+                    post["embed"] = self.upload_images(
+                        args.pds_url, session["accessJwt"], args.image, args.alt_text
+                    )
+                elif args.embed_url:
+                    post["embed"] = self.fetch_embed_url_card(
+                        args.pds_url, session["accessJwt"], args.embed_url
+                    )
+                elif args.embed_ref:
+                    post["embed"] = self.get_embed_ref(args.pds_url, args.embed_ref)
+
+                #print("creating post:", file=sys.stderr)
+                #print(json.dumps(post, indent=2), file=sys.stderr)
+
+                resp = requests.post(
+                    args.pds_url + "/xrpc/com.atproto.repo.createRecord",
+                    headers={"Authorization": "Bearer " + session["accessJwt"]},
+                    json={
+                        "repo": session["did"],
+                        "collection": "app.bsky.feed.post",
+                        "record": post,
+                    },
                 )
-            elif args.embed_url:
-                post["embed"] = self.fetch_embed_url_card(
-                    args.pds_url, session["accessJwt"], args.embed_url
-                )
-            elif args.embed_ref:
-                post["embed"] = self.get_embed_ref(args.pds_url, args.embed_ref)
-
-            #print("creating post:", file=sys.stderr)
-            #print(json.dumps(post, indent=2), file=sys.stderr)
-
-            resp = requests.post(
-                args.pds_url + "/xrpc/com.atproto.repo.createRecord",
-                headers={"Authorization": "Bearer " + session["accessJwt"]},
-                json={
-                    "repo": session["did"],
-                    "collection": "app.bsky.feed.post",
-                    "record": post,
-                },
-            )
-            #print("createRecord response:", file=sys.stderr)
-            #print(json.dumps(resp.json(), indent=2))
-            resp.raise_for_status()
+                self.Rate_Limit.Log_New_Post( "Bluesky" )
+                #print("createRecord response:", file=sys.stderr)
+                #print(json.dumps(resp.json(), indent=2))
+                resp.raise_for_status()
+            else:
+                return False
 
         except Exception as e:
             print( "\n\t**Encountered an error.**\n\t" + str(e) )
@@ -439,8 +446,8 @@ class Post_Content( ):
     def Build_Args( self ):
         args = argparse.Namespace (
             pds_url   = "https://bsky.social",  # Set your desired value
-            handle    = os.environ.get("ATP_AUTH_HANDLE"),
-            password  = os.environ.get("ATP_AUTH_PASSWORD"),
+            #handle    = os.environ.get("ATP_AUTH_HANDLE"),
+            #password  = os.environ.get("ATP_AUTH_PASSWORD"),
             text      = "",  
             image     = [],  
             alt_text  = None,

@@ -14,12 +14,15 @@ from datetime import datetime                                        # Getting c
 from rich import print                                               # formatted / colored printing
 from Logger import CustomLogger
 
+import Social_Post_Logger                                            # Keeping track of rate limits
+
 
 #---------------------------------------------------------------------------------------------------------------#
 # Defining the Class
 #---------------------------------------------------------------------------------------------------------------#
 class Post_Content( ):
     CREDENTIALS_FILE = r'D:\Data\git\Credentials_Twitter_ATLUTD.json'
+    Rate_Limit = Social_Post_Logger.Social_Post_Logger()
 
     Consumer_Key = ""
     Consumer_Secret = ""
@@ -32,12 +35,6 @@ class Post_Content( ):
 
     TWITTER_IMAGE_SIZE_LIMIT = 5 * 1024 * 1024    # 5MB in bytes
     TWITTER_VIDEO_SIZE_LIMIT = 512 * 1024 * 1024  # 512MB in bytes
-
-    Day = ""
-    Daily_Limit = 50
-    Daily_Count_Remaining = 0
-    API_Tweet_Count = 0
-    Count_Date = ""
 
     Media_IDs = []  # List to hold multiple media ID's
 
@@ -70,12 +67,7 @@ class Post_Content( ):
             self.Consumer_Secret     = self.Credentials["client_secret"]
             self.Access_Token        = self.Credentials["Access Token"]
             self.Access_Token_Secret = self.Credentials["Access Secret"]
-
-            # Load API call count and date
-            self.API_Tweet_Count     = self.Credentials.get( "API_Tweet_Count", 0 )
-            self.Count_Date          = self.Credentials.get( "Date", "" )
-            self.Logger.Log( f"self.API_Tweet_Count: {self.API_Tweet_Count}", "Debug" )
-            self.Logger.Log( f"self.Count_Date: {self.Count_Date}", "Debug" )
+            self.Bearer_Token        = self.Credentials["bearer_token"]
 
         except Exception as e:
             self.Logger.Log( f"Encountered an error in Set_Credentials():\n{e}", "Error" )
@@ -92,67 +84,15 @@ class Post_Content( ):
         with open( self.CREDENTIALS_FILE, 'w' ) as f:
             json.dump( self.Credentials, f, indent=2 )
 
-
-    #---------------------------------------------------------------------------------------------------------------#
-    # Function to Check and Update API Call Count
-    # If it's a new day, reset the day and count, then save to the Credential file.  
-    # Returns True if it can tweet.  False if not.
-    #---------------------------------------------------------------------------------------------------------------#
-    def Check_Count( self ):
-        try:
-            Today = datetime.now().strftime( "%Y-%m-%d" )
-
-            if ( self.Count_Date != Today ):
-                # Reset count if the date has changed
-                #self.Logger.Log( f"First tweet of the day, resetting counts", "Debug" )
-                self.Daily_Count_Remaining = 0
-                self.API_Tweet_Count = 0
-                self.Count_Date = Today
-            #else:
-            #    self.Logger.Log( f"Continuing daily Tweet counts: {Today}/{self.Count_Date}", "Debug" )
-            
-            self.Daily_Count_Remaining = self.Daily_Limit - self.API_Tweet_Count
-            if ( self.API_Tweet_Count >= self.Daily_Limit ):
-                #self.Logger.Log( "Daily API call limit reached. Try again tomorrow.", "Error" )
-                return False
-            
-            return True
-        except Exception as e:
-            self.Logger.Log( f"Encountered an error in Check_Count():\n{e}", "Error" )
-            return False
-    #---------------------------------------------------------------------------------------------------------------#
-    # Function to Check and Update API Call Count
-    # If it's a new day, reset the day and count, then save to the Credential file.  
-    # Returns True if it can tweet.  False if not.
-    #---------------------------------------------------------------------------------------------------------------#
-    def Check_And_Update_Count( self ):
-        try:
-            if ( self.Check_Count() ):
-                self.API_Tweet_Count += 1
-                self.Save_Credentials()
-                return True
-            else:
-                return False
-            
-        except Exception as e:
-            self.Logger.Log( f"Encountered an error in Check_And_Update_Count():\n{e}", "Error" )
-            return False
-
     #---------------------------------------------------------------------------------------------------------------#
     # Function to Check and Update API Call Count
     # If it's a new day, reset the day and count, then save to the Credential file.  
     # Returns True if it can tweet.  False if not.
     #---------------------------------------------------------------------------------------------------------------#
     def Post( self, Text ):
-        #self.Set_Authorization()
         
-        if ( not self.Check_And_Update_Count() ):
-            # Hit the rate limit
-            self.Logger.Log( f"Daily API call limit of {self.Daily_Limit} reached. Try again tomorrow.", "Error" )
-            return False
-        else:
-            # Under rate limit
-            
+        if ( self.Rate_Limit.Can_Post_To_Social_Site( "Twitter" ) ):
+
             try:
                 if ( len( self.Media_IDs ) > 0 ):
                     Post_Response = self.Client.create_tweet( text=Text, media_ids=self.Media_IDs )
@@ -163,11 +103,16 @@ class Post_Content( ):
             
                 ID = Post_Response.data['id']
                 self.Media_IDs.clear()
+                self.Rate_Limit.Log_New_Post( "Twitter" )
                 return ID
-            
+
             except Exception as e:
                 self.Logger.Log( f"Tweet Failed to Post: {e}", "Error" )
                 return False
+
+        else:
+            return False
+                    
           
 
     #---------------------------------------------------------------------------------------------------------------#
@@ -180,7 +125,8 @@ class Post_Content( ):
             self.Access_Token, 
             self.Access_Token_Secret
         )
-        self.API = tweepy.API( self.Authorization )
+
+        self.API = tweepy.API( self.Authorization, wait_on_rate_limit=True )
 
         self.Client = tweepy.Client(
             consumer_key=self.Consumer_Key, 
@@ -195,12 +141,7 @@ class Post_Content( ):
     def Add_Media( self, Media_Path ):
         try:
 
-            # don't want to even prep data if we're over the limit
-            if ( not self.Check_Count() ):
-                # Hit the rate limit
-                self.Logger.Log( f"Daily API call limit of {self.Daily_Limit} reached. Try again tomorrow.", "Error" )
-                return False
-            else:
+            if ( self.Rate_Limit.Can_Post_To_Social_Site( "Twitter" ) ):
                 # Under the limit
                 if ( os.path.exists( Media_Path ) ):
                     File_Size = os.path.getsize( Media_Path )
@@ -225,7 +166,12 @@ class Post_Content( ):
                 else: 
                     self.Logger.Log( f"Media file not found: {Media_Path}", "Warning" )
 
-            return True
+                self.Rate_Limit.Log_New_Post( "Twitter" )
+                return True
+            
+            else:
+                return False
+
         except Exception as e:
             self.Logger.Log( f"Encountered an error in Add_Media():\n{e}", "Error" )
             return False
@@ -236,18 +182,18 @@ class Post_Content( ):
 #---------------------------------------------------------------------------------------------------------------#
 if __name__ == '__main__':
     Posting = Post_Content()
-    Current_Time = datetime.now().strftime("%H:%M:%S")
 
-    Test = Posting.Post( f"API Testing - {Current_Time}" )
-
-    time.sleep( 2 )
     #Posting.Add_Media( r"d:\Data\Pics\temp\IMG_8524.PNG" )
-    Current_Time = datetime.now().strftime("%H:%M:%S")
-    Test = Posting.Post( f"API Testing - {Current_Time}" )
-    time.sleep( 2 )
     
     #Posting.Add_Media( r"d:\Data\Pics\temp\IMG_6791.MOV" )
-    Current_Time = datetime.now().strftime("%H:%M:%S")
-    Test = Posting.Post( f"API Testing - {Current_Time}" )
+
+    for i in range( 1, 2 ):
+        Current_Time = datetime.now().strftime("%H:%M:%S")
+        Text = f"API Testing - {Current_Time}"
+        print( Text )
+        Test = Posting.Post( f"API Testing - {Text}" )
+        time.sleep( 3 )
+        if ( Test ):
+            Posting.Client.delete_tweet( Test )
 
     
