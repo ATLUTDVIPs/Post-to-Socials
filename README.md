@@ -156,7 +156,12 @@ import Post_BlueSky                                                  # Allow to 
     # Returns True if it can tweet.  False if not.
     #---------------------------------------------------------------------------------------------------------------#
     def Post( self, Text ):
-        
+
+        if ( len( Text ) > self.Character_Limit ):
+            self.Logger.Log( f"Tweet Text too long.  Failed to Post: {e}", "Error" )
+            return False
+
+
         if ( self.Rate_Limit.Can_Post_To_Social_Site( "Twitter" ) ):
 
             try:
@@ -178,6 +183,7 @@ import Post_BlueSky                                                  # Allow to 
 
         else:
             return False
+                    
             
 
     #---------------------------------------------------------------------------------------------------------------#
@@ -211,16 +217,18 @@ import Post_BlueSky                                                  # Allow to 
                 else: 
                     self.Logger.Log( f"Media file not found: {Media_Path}", "Warning" )
 
-                self.Rate_Limit.Log_New_Post( "Twitter" )
+                # Increasing the social logging for image uploads +1 - it has been unclear if twitter counts the image as a post within its limit
+                #self.Rate_Limit.Log_New_Post( "Twitter" )
                 return True
             
             else:
+                self.Logger.Log( f"Exceeded rate limit, not posing.", "Error" )
                 return False
 
         except Exception as e:
             self.Logger.Log( f"Encountered an error in Add_Media():\n{e}", "Error" )
             return False
-
+        
 ```
 
 Additionally, you may update the main start of Post_Twitter.py.  I was using this as testing for a post with just text, a post with an image, and a post with a movie.
