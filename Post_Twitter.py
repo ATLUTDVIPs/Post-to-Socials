@@ -41,6 +41,9 @@ class Post_Content( ):
     Images = [ '.jpg', '.jpeg', '.png', '.gif' ]
     Movies = [ '.mov', '.mpg' ]
 
+    Character_Limit = 280
+
+
     #---------------------------------------------------------------------------------------------------------------#
     # Class initialization
     #---------------------------------------------------------------------------------------------------------------#
@@ -90,7 +93,12 @@ class Post_Content( ):
     # Returns True if it can tweet.  False if not.
     #---------------------------------------------------------------------------------------------------------------#
     def Post( self, Text ):
-        
+
+        if ( len( Text ) > self.Character_Limit ):
+            self.Logger.Log( f"Tweet Text too long.  Failed to Post: {e}", "Error" )
+            return False
+
+
         if ( self.Rate_Limit.Can_Post_To_Social_Site( "Twitter" ) ):
 
             try:
@@ -166,10 +174,12 @@ class Post_Content( ):
                 else: 
                     self.Logger.Log( f"Media file not found: {Media_Path}", "Warning" )
 
-                self.Rate_Limit.Log_New_Post( "Twitter" )
+                # Increasing the social logging for image uploads +1 - not sure if it's required or not
+                #self.Rate_Limit.Log_New_Post( "Twitter" )
                 return True
             
             else:
+                self.Logger.Log( f"Exceeded rate limit, not posing.", "Error" )
                 return False
 
         except Exception as e:
